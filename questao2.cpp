@@ -15,19 +15,14 @@ constexpr int M = 100000;
 int N, Np, Nc;
 
 vector<int> bufferCompartilhado;
-int inPos = 0;
-int outPos = 0;
-int ocupacao = 0;
+int inPos, outPos, ocupacao;
 
 counting_semaphore<>* livres;
 counting_semaphore<>* ocupados;
 
 mutex mtx;
-atomic<int> produzidos{0};
-atomic<int> consumidos{0};
-atomic<bool> terminou{false};
-
-vector<int> historicoOcupacao;
+atomic<int> produzidos;
+atomic<int> consumidos;
 
 bool isPrime(int n) {
     if (n < 2) return false;
@@ -45,11 +40,7 @@ void produtor() {
 
     while (true) {
         int id = produzidos.fetch_add(1);
-
-        if (id >= M) {
-            produzidos.fetch_sub(1);
-            break;
-        }
+        if (id >= M) break;
 
         int numero = dist(gen);
 
@@ -57,12 +48,9 @@ void produtor() {
 
         {
             lock_guard<mutex> lock(mtx);
-
             bufferCompartilhado[inPos] = numero;
             inPos = (inPos + 1) % N;
             ocupacao++;
-
-            historicoOcupacao.push_back(ocupacao);
         }
 
         ocupados->release();
@@ -84,28 +72,18 @@ void consumidor() {
 
         {
             lock_guard<mutex> lock(mtx);
-
             numero = bufferCompartilhado[outPos];
             outPos = (outPos + 1) % N;
             ocupacao--;
-
-            historicoOcupacao.push_back(ocupacao);
         }
 
         livres->release();
 
-        bool primo = isPrime(numero);
+        isPrime(numero); // processamento
 
         int atual = consumidos.fetch_add(1) + 1;
 
-        if (atual <= 50) {
-            cout << numero << " -> "
-                 << (primo ? "primo" : "nao primo")
-                 << endl;
-        }
-
         if (atual >= M) {
-            terminou = true;
             for (int i = 0; i < Nc; i++)
                 ocupados->release();
             break;
@@ -113,17 +91,13 @@ void consumidor() {
     }
 }
 
-int main(int argc, char* argv[]) {
-    if (argc != 4) {
-        cerr << "Uso: " << argv[0] << " <N> <Np> <Nc>\n";
-        return 1;
-    }
+// Executa um cenário e retorna tempo
+double executar() {
+    bufferCompartilhado.assign(N, 0);
+    inPos = outPos = ocupacao = 0;
 
-    N = stoi(argv[1]);
-    Np = stoi(argv[2]);
-    Nc = stoi(argv[3]);
-
-    bufferCompartilhado.resize(N);
+    produzidos = 0;
+    consumidos = 0;
 
     livres = new counting_semaphore<>(N);
     ocupados = new counting_semaphore<>(0);
@@ -139,34 +113,59 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < Nc; i++)
         consumidores.emplace_back(consumidor);
 
-    for (auto& t : produtores)
-        t.join();
-
-    for (auto& t : consumidores)
-        t.join();
+    for (auto& t : produtores) t.join();
+    for (auto& t : consumidores) t.join();
 
     auto fim = chrono::high_resolution_clock::now();
 
+    delete livres;
+    delete ocupados;
+
     chrono::duration<double> tempo = fim - inicio;
+    return tempo.count();
+}
 
-    cout << "Tempo de execucao: " << tempo.count() << " segundos\n";
+int main() {
+    vector<int> Ns = {1, 10, 100, 1000};
+    vector<pair<int,int>> configs = {
+        {1,1},{1,2},{1,4},{1,8},
+        {2,1},{4,1},{8,1}
+    };
 
-    string nomeArquivo = "ocupacao_N" + to_string(N) +
-                         "_P" + to_string(Np) +
-                         "_C" + to_string(Nc) + ".csv";
+    ofstream arquivo("resultados.csv");
+    arquivo << "N,Np,Nc,tempo_medio\n";
 
-    ofstream arquivo(nomeArquivo);
-    arquivo << "operacao,ocupacao\n";
+    for (int n : Ns) {
+        N = n;
 
-    for (size_t i = 0; i < historicoOcupacao.size(); i++)
-        arquivo << i << "," << historicoOcupacao[i] << "\n";
+        for (auto [p, c] : configs) {
+            Np = p;
+            Nc = c;
+
+            double soma = 0.0;
+
+            for (int i = 0; i < 10; i++) {
+                double t = executar();
+                soma += t;
+            }
+
+            double media = soma / 10.0;
+
+            cout << "N=" << N
+                 << " Np=" << Np
+                 << " Nc=" << Nc
+                 << " -> " << media << " s\n";
+
+            arquivo << N << ","
+                    << Np << ","
+                    << Nc << ","
+                    << media << "\n";
+        }
+    }
 
     arquivo.close();
 
-    cout << "Arquivo de ocupacao gerado: " << nomeArquivo << endl;
-
-    delete livres;
-    delete ocupados;
+    cout << "\nArquivo 'resultados.csv' gerado!\n";
 
     return 0;
 }
