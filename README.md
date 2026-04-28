@@ -5,7 +5,7 @@ Trabalho da matéria de Sistemas Distribuidos, questão 1 trata de um Produtor-C
 Trabalho executado pela dupla Maurílio Rittershaussen Novaes e Eduardo Morais Silva Martins.
 
 Para rodar a questão 1 usar os seguintes comandos: g++ questao1.cpp -o questao1 
-e depois: ./questao1 
+e depois: ./questao1 *QUANTIDADE DE NUMEROS A SEREM GERADOS*
 
 Para rodar a questão 2 usar os seguintes comandos: g++ -std=c++20 -pthread questao2.cpp -o questao2
 e depois: ./questao2
